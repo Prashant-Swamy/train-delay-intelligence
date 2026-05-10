@@ -1,0 +1,11 @@
+train_no,train_name,zone,from_station,to_station
+12650,Karnataka Sampark Kranti,SR,SBC,NDLS
+12951,Mumbai Rajdhani,WR,MMCT,NDLS
+12301,Howrah Rajdhani,ER,HWH,NDLS
+22221,CSMT Rajdhani,CR,CSMT,NDLS
+12002,Bhopal Shatabdi,NCR,NDLS,BPL
+12009,Mumbai Shatabdi,CR,MMCT,PUNE
+12011,Kalka Shatabdi,NR,NDLS,KLK
+12019,Howrah Shatabdi,ER,HWH,NDLS
+12023,Pune Shatabdi,CR,PUNE,MMCT
+12627,Karnataka Express,SR,SBC,NDLS
