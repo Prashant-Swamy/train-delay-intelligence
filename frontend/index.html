@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Train Delay Intelligence</title>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+  <h1>🚆 Train Delay Intelligence</h1>
+  <span>India's first railway delay pattern tracker</span>
+  <div class="nav-links">
+    <a href="index.html">Search</a>
+    <a href="zones.html">Zone Map</a>
+  </div>
+</nav>
+
+<!-- Hero Search -->
+<div class="container">
+  <div class="hero">
+    <h2>Will your train be late?</h2>
+    <p>Search any train to see delay patterns, worst stations, and on-time performance.</p>
+
+    <div class="search-box">
+      <input
+        type="text"
+        id="searchInput"
+        placeholder="Enter train number e.g. 12650"
+        autocomplete="off"
+      />
+      <button onclick="handleSearch()">Search</button>
+    </div>
+
+    <!-- Search results dropdown -->
+    <div class="results" id="searchResults"></div>
+  </div>
+
+  <!-- Popular Trains -->
+  <div class="popular-section">
+    <h3>Popular Trains</h3>
+    <div class="popular-grid">
+      <a class="popular-card" href="train.html?train=12650">
+        <strong>12650 — Karnataka SK Express</strong>
+        <small>NZM → YPR · SR Zone</small>
+      </a>
+      <a class="popular-card" href="train.html?train=12951">
+        <strong>12951 — Mumbai Rajdhani</strong>
+        <small>NDLS → MMCT · WR Zone</small>
+      </a>
+      <a class="popular-card" href="train.html?train=12301">
+        <strong>12301 — Howrah Rajdhani</strong>
+        <small>NDLS → HWH · ER Zone</small>
+      </a>
+      <a class="popular-card" href="train.html?train=12627">
+        <strong>12627 — Karnataka Express</strong>
+        <small>SBC → NDLS · SR Zone</small>
+      </a>
+      <a class="popular-card" href="train.html?train=12002">
+        <strong>12002 — Bhopal Shatabdi</strong>
+        <small>NDLS → BPL · NCR Zone</small>
+      </a>
+      <a class="popular-card" href="train.html?train=22221">
+        <strong>22221 — CSMT Rajdhani</strong>
+        <small>CSMT → NDLS · CR Zone</small>
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = "http://127.0.0.1:8000";
+
+  // Search on Enter key
+  document.getElementById("searchInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") handleSearch();
+  });
+
+  async function handleSearch() {
+    const q = document.getElementById("searchInput").value.trim();
+    if (!q) return;
+
+    // If user typed a pure number — go directly to train page
+    if (/^\d+$/.test(q)) {
+      window.location.href = `train.html?train=${q}`;
+      return;
+    }
+
+    // Otherwise search by name
+    const box = document.getElementById("searchResults");
+    box.style.display = "block";
+    box.innerHTML = `<div class="result-item">Searching...</div>`;
+
+    try {
+      const res  = await fetch(`${API}/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+
+      if (!data.data || data.data.length === 0) {
+        box.innerHTML = `<div class="result-item">No trains found for "${q}"</div>`;
+        return;
+      }
+
+      box.innerHTML = data.data.map(t => `
+        <a class="result-item" href="train.html?train=${t.train_no}">
+          <strong>${t.train_no} — ${t.train_name}</strong>
+          <small>${t.from_station} → ${t.to_station} · ${t.zone} Zone</small>
+        </a>
+      `).join("");
+
+    } catch (err) {
+      box.innerHTML = `<div class="result-item">Error connecting to API</div>`;
+    }
+  }
+
+  // Close search results when clicking outside
+  document.addEventListener("click", e => {
+    const box = document.getElementById("searchResults");
+    if (!e.target.closest(".search-box") && !e.target.closest(".results")) {
+      box.style.display = "none";
+    }
+  });
+</script>
+
+</body>
+</html>

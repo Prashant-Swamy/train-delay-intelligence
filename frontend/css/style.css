@@ -1,0 +1,292 @@
+/* style.css — Train Delay Intelligence Dashboard */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary:   #1a56db;
+  --success:   #057a55;
+  --warning:   #c27803;
+  --danger:    #c81e1e;
+  --dark:      #111827;
+  --gray:      #6b7280;
+  --light:     #f9fafb;
+  --border:    #e5e7eb;
+  --card-bg:   #ffffff;
+}
+
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background:  var(--light);
+  color:       var(--dark);
+  min-height:  100vh;
+}
+
+/* ── Navbar ── */
+.navbar {
+  background:  var(--primary);
+  padding:     1rem 2rem;
+  display:     flex;
+  align-items: center;
+  gap:         1rem;
+  box-shadow:  0 2px 8px rgba(0,0,0,0.15);
+}
+
+.navbar h1 {
+  color:       #fff;
+  font-size:   1.3rem;
+  font-weight: 700;
+}
+
+.navbar span {
+  color:       rgba(255,255,255,0.7);
+  font-size:   0.9rem;
+}
+
+.nav-links {
+  margin-left: auto;
+  display:     flex;
+  gap:         1.5rem;
+}
+
+.nav-links a {
+  color:           rgba(255,255,255,0.85);
+  text-decoration: none;
+  font-size:       0.95rem;
+  transition:      color 0.2s;
+}
+
+.nav-links a:hover { color: #fff; }
+
+/* ── Container ── */
+.container {
+  max-width: 1100px;
+  margin:    0 auto;
+  padding:   2rem 1.5rem;
+}
+
+/* ── Hero / Search ── */
+.hero {
+  text-align: center;
+  padding:    3rem 1rem;
+}
+
+.hero h2 {
+  font-size:   2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.hero p {
+  color:         var(--gray);
+  margin-bottom: 2rem;
+  font-size:     1.05rem;
+}
+
+.search-box {
+  display:         flex;
+  gap:             0.75rem;
+  max-width:       500px;
+  margin:          0 auto;
+  justify-content: center;
+}
+
+.search-box input {
+  flex:          1;
+  padding:       0.75rem 1rem;
+  border:        2px solid var(--border);
+  border-radius: 8px;
+  font-size:     1rem;
+  outline:       none;
+  transition:    border-color 0.2s;
+}
+
+.search-box input:focus { border-color: var(--primary); }
+
+.search-box button {
+  padding:          0.75rem 1.5rem;
+  background:       var(--primary);
+  color:            #fff;
+  border:           none;
+  border-radius:    8px;
+  font-size:        1rem;
+  cursor:           pointer;
+  transition:       background 0.2s;
+}
+
+.search-box button:hover { background: #1447c0; }
+
+/* ── Search Results ── */
+.results {
+  max-width:  500px;
+  margin:     1rem auto 0;
+  background: var(--card-bg);
+  border:     1px solid var(--border);
+  border-radius: 8px;
+  overflow:   hidden;
+  display:    none;
+}
+
+.result-item {
+  padding:         0.85rem 1rem;
+  border-bottom:   1px solid var(--border);
+  cursor:          pointer;
+  transition:      background 0.15s;
+  text-decoration: none;
+  display:         block;
+  color:           var(--dark);
+}
+
+.result-item:last-child { border-bottom: none; }
+.result-item:hover      { background: var(--light); }
+
+.result-item strong { display: block; font-size: 0.95rem; }
+.result-item small  { color: var(--gray); font-size: 0.82rem; }
+
+/* ── Stats Cards ── */
+.stats-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap:                   1rem;
+  margin-bottom:         2rem;
+}
+
+.stat-card {
+  background:    var(--card-bg);
+  border:        1px solid var(--border);
+  border-radius: 10px;
+  padding:       1.25rem;
+  text-align:    center;
+}
+
+.stat-card .label {
+  font-size:     0.82rem;
+  color:         var(--gray);
+  margin-bottom: 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-card .value {
+  font-size:   2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stat-card .sub {
+  font-size:  0.82rem;
+  color:      var(--gray);
+  margin-top: 0.3rem;
+}
+
+.good    { color: var(--success); }
+.warning { color: var(--warning); }
+.bad     { color: var(--danger);  }
+
+/* ── Chart Cards ── */
+.chart-card {
+  background:    var(--card-bg);
+  border:        1px solid var(--border);
+  border-radius: 10px;
+  padding:       1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.chart-card h3 {
+  font-size:     1rem;
+  font-weight:   600;
+  margin-bottom: 1rem;
+  color:         var(--dark);
+}
+
+.chart-card canvas { max-height: 300px; }
+
+/* ── Train Header ── */
+.train-header {
+  background:    var(--primary);
+  color:         #fff;
+  border-radius: 10px;
+  padding:       1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.train-header h2 { font-size: 1.4rem; margin-bottom: 0.3rem; }
+.train-header p  { opacity: 0.8; font-size: 0.9rem; }
+
+.badge {
+  display:       inline-block;
+  padding:       0.25rem 0.75rem;
+  border-radius: 99px;
+  font-size:     0.8rem;
+  font-weight:   600;
+  margin-top:    0.5rem;
+}
+
+.badge-good    { background: #d1fae5; color: #065f46; }
+.badge-warning { background: #fef3c7; color: #92400e; }
+.badge-bad     { background: #fee2e2; color: #991b1b; }
+
+/* ── Loading / Error ── */
+.loading {
+  text-align:  center;
+  padding:     3rem;
+  color:       var(--gray);
+  font-size:   1rem;
+}
+
+.error-msg {
+  text-align:    center;
+  padding:       2rem;
+  color:         var(--danger);
+  background:    #fee2e2;
+  border-radius: 8px;
+  margin:        1rem 0;
+}
+
+/* ── Popular Trains ── */
+.popular-section { margin-top: 2.5rem; }
+.popular-section h3 {
+  font-size:     1rem;
+  font-weight:   600;
+  color:         var(--gray);
+  margin-bottom: 1rem;
+  text-align:    center;
+}
+
+.popular-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap:                   0.75rem;
+  max-width:             800px;
+  margin:                0 auto;
+}
+
+.popular-card {
+  background:      var(--card-bg);
+  border:          1px solid var(--border);
+  border-radius:   8px;
+  padding:         0.85rem 1rem;
+  cursor:          pointer;
+  text-decoration: none;
+  color:           var(--dark);
+  transition:      box-shadow 0.2s, border-color 0.2s;
+  display:         block;
+}
+
+.popular-card:hover {
+  box-shadow:   0 4px 12px rgba(0,0,0,0.08);
+  border-color: var(--primary);
+}
+
+.popular-card strong { display: block; font-size: 0.9rem; }
+.popular-card small  { color: var(--gray); font-size: 0.8rem; }
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .hero h2    { font-size: 1.5rem; }
+  .search-box { flex-direction: column; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}

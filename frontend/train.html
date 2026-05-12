@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Train Detail — Delay Intelligence</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+  <h1>🚆 Train Delay Intelligence</h1>
+  <div class="nav-links">
+    <a href="index.html">← Back to Search</a>
+    <a href="zones.html">Zone Map</a>
+  </div>
+</nav>
+
+<div class="container">
+
+  <!-- Loading state -->
+  <div class="loading" id="loadingMsg">⏳ Loading train data...</div>
+
+  <!-- Error state -->
+  <div class="error-msg" id="errorMsg" style="display:none"></div>
+
+  <!-- Main content — hidden until data loads -->
+  <div id="mainContent" style="display:none">
+
+    <!-- Train Header -->
+    <div class="train-header">
+      <h2 id="trainName">—</h2>
+      <p id="trainRoute">—</p>
+      <span class="badge" id="onTimeBadge">—</span>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">On-Time %</div>
+        <div class="value" id="statOnTime">—</div>
+        <div class="sub">last 30 days</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Avg Delay</div>
+        <div class="value" id="statAvgDelay">—</div>
+        <div class="sub">minutes</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Worst Station</div>
+        <div class="value" style="font-size:1rem;padding-top:0.5rem" id="statWorstStation">—</div>
+        <div class="sub" id="statWorstDelay">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Best Day</div>
+        <div class="value" style="font-size:1.2rem;padding-top:0.4rem" id="statBestDay">—</div>
+        <div class="sub">lowest avg delay</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Worst Day</div>
+        <div class="value" style="font-size:1.2rem;padding-top:0.4rem" id="statWorstDay">—</div>
+        <div class="sub">highest avg delay</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Records</div>
+        <div class="value" id="statRecords">—</div>
+        <div class="sub">data points collected</div>
+      </div>
+    </div>
+
+    <!-- Chart 1 — Delay by Station -->
+    <div class="chart-card">
+      <h3>📍 Average Delay by Station</h3>
+      <canvas id="stationChart"></canvas>
+    </div>
+
+    <!-- Chart 2 — Delay by Day -->
+    <div class="chart-card">
+      <h3>📅 Delay by Day of Week</h3>
+      <canvas id="dayChart"></canvas>
+    </div>
+
+    <!-- Chart 3 — Delay by Month -->
+    <div class="chart-card">
+      <h3>📆 Monthly Delay Trend</h3>
+      <canvas id="monthChart"></canvas>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const API = "http://127.0.0.1:8000";
+
+  // Get train number from URL
+  const params   = new URLSearchParams(window.location.search);
+  const trainNo  = params.get("train");
+
+  if (!trainNo) {
+    window.location.href = "index.html";
+  }
+
+  // Update page title
+  document.title = `Train ${trainNo} — Delay Intelligence`;
+
+  // ── Helpers ──────────────────────────────
+
+  function colorForDelay(delay) {
+    if (delay <= 5)  return "#057a55";
+    if (delay <= 15) return "#c27803";
+    return "#c81e1e";
+  }
+
+  function badgeClass(pct) {
+    if (pct >= 70) return "badge-good";
+    if (pct >= 40) return "badge-warning";
+    return "badge-bad";
+  }
+
+  function showError(msg) {
+    document.getElementById("loadingMsg").style.display = "none";
+    document.getElementById("errorMsg").style.display   = "block";
+    document.getElementById("errorMsg").textContent     = msg;
+  }
+
+  // ── Fetch all data ────────────────────────
+
+  async function loadAll() {
+    try {
+      const [sumRes, stnRes, dayRes, monRes] = await Promise.all([
+        fetch(`${API}/train/${trainNo}/summary`),
+        fetch(`${API}/train/${trainNo}/by-station`),
+        fetch(`${API}/train/${trainNo}/by-day`),
+        fetch(`${API}/train/${trainNo}/by-month`)
+      ]);
+
+      // Summary
+      if (!sumRes.ok) {
+        const err = await sumRes.json();
+        showError(`${err.detail || "Train not found or no data collected yet."}`);
+        return;
+      }
+
+      const sum = (await sumRes.json()).data;
+      const stn = (await stnRes.json()).data || [];
+      const day = (await dayRes.json()).data || [];
+      const mon = (await monRes.json()).data || [];
+
+      // ── Fill summary cards ──
+      document.getElementById("trainName").textContent =
+        `Train ${trainNo}`;
+      document.getElementById("trainRoute").textContent =
+        `Data collected over ${sum.total_records} station records`;
+
+      const pct = sum.on_time_pct;
+      const badge = document.getElementById("onTimeBadge");
+      badge.textContent  = `${pct}% On Time`;
+      badge.className    = `badge ${badgeClass(pct)}`;
+
+      const onTimeEl = document.getElementById("statOnTime");
+      onTimeEl.textContent = `${pct}%`;
+      onTimeEl.className   = `value ${pct >= 70 ? "good" : pct >= 40 ? "warning" : "bad"}`;
+
+      const delayEl = document.getElementById("statAvgDelay");
+      delayEl.textContent = sum.avg_delay;
+      delayEl.className   = `value ${sum.avg_delay <= 5 ? "good" : sum.avg_delay <= 15 ? "warning" : "bad"}`;
+
+      document.getElementById("statWorstStation").textContent = sum.worst_station;
+      document.getElementById("statWorstDelay").textContent   =
+        `avg ${sum.worst_station_delay} min delay`;
+      document.getElementById("statBestDay").textContent  = sum.best_day;
+      document.getElementById("statWorstDay").textContent  = sum.worst_day;
+      document.getElementById("statRecords").textContent   = sum.total_records;
+
+      // ── Chart 1 — By Station ──
+      if (stn.length > 0) {
+        const top = stn.slice(0, 15); // top 15 worst stations
+        new Chart(document.getElementById("stationChart"), {
+          type: "bar",
+          data: {
+            labels:   top.map(s => s.station_code),
+            datasets: [{
+              label:           "Avg Delay (mins)",
+              data:            top.map(s => s.avg_delay),
+              backgroundColor: top.map(s => colorForDelay(s.avg_delay)),
+              borderRadius:    4
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales:  { y: { beginAtZero: true, title: { display: true, text: "Minutes" } } }
+          }
+        });
+      }
+
+      // ── Chart 2 — By Day ──
+      if (day.length > 0) {
+        new Chart(document.getElementById("dayChart"), {
+          type: "bar",
+          data: {
+            labels:   day.map(d => d.day.slice(0, 3)),
+            datasets: [{
+              label:           "Avg Delay (mins)",
+              data:            day.map(d => d.avg_delay),
+              backgroundColor: day.map(d => colorForDelay(d.avg_delay)),
+              borderRadius:    4
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales:  { y: { beginAtZero: true, title: { display: true, text: "Minutes" } } }
+          }
+        });
+      }
+
+      // ── Chart 3 — By Month ──
+      if (mon.length > 0) {
+        new Chart(document.getElementById("monthChart"), {
+          type: "line",
+          data: {
+            labels:   mon.map(m => m.month_name),
+            datasets: [{
+              label:           "Avg Delay (mins)",
+              data:            mon.map(m => m.avg_delay),
+              borderColor:     "#1a56db",
+              backgroundColor: "rgba(26,86,219,0.08)",
+              borderWidth:     2,
+              pointRadius:     5,
+              tension:         0.3,
+              fill:            true
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales:  { y: { beginAtZero: true, title: { display: true, text: "Minutes" } } }
+          }
+        });
+      }
+
+      // Show content
+      document.getElementById("loadingMsg").style.display  = "none";
+      document.getElementById("mainContent").style.display = "block";
+
+    } catch (err) {
+      showError("Could not connect to API. Make sure the backend is running.");
+    }
+  }
+
+  loadAll();
+</script>
+
+</body>
+</html>
