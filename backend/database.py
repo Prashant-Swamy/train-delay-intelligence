@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # Load environment variables from .env file
 load_dotenv()
 
+
 # Read DB credentials from environment
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
