@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Zone Heatmap — Train Delay Intelligence</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .zone-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .zone-card {
+      background:    #fff;
+      border:        1px solid var(--border);
+      border-radius: 10px;
+      padding:       1.25rem;
+      text-align:    center;
+      position:      relative;
+      overflow:      hidden;
+    }
+
+    .zone-card .rank {
+      position:    absolute;
+      top:         0.6rem;
+      right:       0.75rem;
+      font-size:   0.75rem;
+      color:       var(--gray);
+      font-weight: 600;
+    }
+
+    .zone-card .zone-code {
+      font-size:     2rem;
+      font-weight:   800;
+      margin-bottom: 0.25rem;
+    }
+
+    .zone-card .zone-name {
+      font-size:     0.8rem;
+      color:         var(--gray);
+      margin-bottom: 1rem;
+    }
+
+    .zone-card .pct {
+      font-size:   1.6rem;
+      font-weight: 700;
+    }
+
+    .zone-card .pct-label {
+      font-size: 0.78rem;
+      color:     var(--gray);
+    }
+
+    .zone-card .delay-row {
+      margin-top:  0.75rem;
+      font-size:   0.85rem;
+      color:       var(--gray);
+    }
+
+    .zone-bar {
+      height:        6px;
+      border-radius: 99px;
+      margin-top:    0.75rem;
+      background:    var(--border);
+      overflow:      hidden;
+    }
+
+    .zone-bar-fill {
+      height:        100%;
+      border-radius: 99px;
+      transition:    width 0.6s ease;
+    }
+
+    .page-intro {
+      text-align:    center;
+      margin-bottom: 2rem;
+    }
+
+    .page-intro h2 {
+      font-size:     1.6rem;
+      font-weight:   700;
+      margin-bottom: 0.4rem;
+    }
+
+    .page-intro p {
+      color:     var(--gray);
+      font-size: 0.95rem;
+    }
+
+    .updated-tag {
+      display:       inline-block;
+      background:    #dbeafe;
+      color:         #1e40af;
+      border-radius: 99px;
+      padding:       0.2rem 0.75rem;
+      font-size:     0.78rem;
+      margin-top:    0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+<nav class="navbar">
+  <h1>🚆 Train Delay Intelligence</h1>
+  <div class="nav-links">
+    <a href="index.html">Search</a>
+    <a href="zones.html">Zone Map</a>
+  </div>
+</nav>
+
+<div class="container">
+
+  <div class="page-intro">
+    <h2>🗺️ Railway Zone Punctuality</h2>
+    <p>Which Indian Railway zone is most on time? Based on live collected data.</p>
+    <span class="updated-tag" id="updatedTag">Loading data...</span>
+  </div>
+
+  <!-- Loading -->
+  <div class="loading" id="loadingMsg">⏳ Loading zone data...</div>
+  <div class="error-msg" id="errorMsg" style="display:none"></div>
+
+  <!-- Zone Cards -->
+  <div class="zone-grid" id="zoneGrid" style="display:none"></div>
+
+  <!-- Bar Chart -->
+  <div class="chart-card" id="chartCard" style="display:none">
+    <h3>📊 Zone Comparison — On-Time % vs Avg Delay</h3>
+    <canvas id="zoneChart"></canvas>
+  </div>
+
+</div>
+
+<script>
+  const API = "http://127.0.0.1:8000";
+
+  // Zone full names
+  const ZONE_NAMES = {
+    CR:  "Central Railway",
+    ER:  "Eastern Railway",
+    ECR: "East Central Railway",
+    ECoR:"East Coast Railway",
+    NR:  "Northern Railway",
+    NCR: "North Central Railway",
+    NER: "North Eastern Railway",
+    NFR: "Northeast Frontier Railway",
+    NWR: "North Western Railway",
+    SR:  "Southern Railway",
+    SCR: "South Central Railway",
+    SER: "South Eastern Railway",
+    SECR:"South East Central Railway",
+    SWR: "South Western Railway",
+    WR:  "Western Railway",
+    WCR: "West Central Railway",
+    KR:  "Konkan Railway",
+    CLW: "Chittaranjan Loco Works",
+    ICF: "Integral Coach Factory",
+    RCF: "Rail Coach Factory",
+    RWF: "Rail Wheel Factory",
+    RDSO:"Research Design Std Org",
+    MR:  "Metro Railway Kolkata"
+  };
+
+  function colorForPct(pct) {
+    if (pct >= 70) return "#057a55";
+    if (pct >= 40) return "#c27803";
+    return "#c81e1e";
+  }
+
+  function rankLabel(rank) {
+    if (rank === 1) return "🥇 #1";
+    if (rank === 2) return "🥈 #2";
+    if (rank === 3) return "🥉 #3";
+    return `#${rank}`;
+  }
+
+  async function loadZones() {
+    try {
+      const res  = await fetch(`${API}/zones/summary`);
+
+      if (!res.ok) {
+        document.getElementById("loadingMsg").style.display = "none";
+        document.getElementById("errorMsg").style.display   = "block";
+        document.getElementById("errorMsg").textContent     =
+          "No zone data yet. Keep the collector running for a few days.";
+        return;
+      }
+
+      const json  = await res.json();
+      const zones = json.data;
+
+      // Update tag
+      document.getElementById("updatedTag").textContent =
+        `${zones.length} zones tracked · ${zones.reduce((a,z) => a + z.total_records, 0).toLocaleString()} records`;
+
+      // Build zone cards
+      const grid = document.getElementById("zoneGrid");
+      grid.innerHTML = zones.map(z => {
+        const color    = colorForPct(z.on_time_pct);
+        const fullName = ZONE_NAMES[z.zone] || z.zone;
+
+        return `
+          <div class="zone-card">
+            <span class="rank">${rankLabel(z.punctuality_rank)}</span>
+            <div class="zone-code" style="color:${color}">${z.zone}</div>
+            <div class="zone-name">${fullName}</div>
+            <div class="pct" style="color:${color}">${z.on_time_pct}%</div>
+            <div class="pct-label">on time</div>
+            <div class="delay-row">Avg delay: ${z.avg_delay} mins</div>
+            <div class="delay-row">${z.trains_tracked} trains · ${z.total_records} records</div>
+            <div class="zone-bar">
+              <div class="zone-bar-fill"
+                   style="width:${z.on_time_pct}%; background:${color}">
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // Build chart
+      new Chart(document.getElementById("zoneChart"), {
+        type: "bar",
+        data: {
+          labels:   zones.map(z => z.zone),
+          datasets: [
+            {
+              label:           "On-Time %",
+              data:            zones.map(z => z.on_time_pct),
+              backgroundColor: zones.map(z => colorForPct(z.on_time_pct)),
+              borderRadius:    4,
+              yAxisID:         "y"
+            },
+            {
+              label:           "Avg Delay (mins)",
+              data:            zones.map(z => z.avg_delay),
+              backgroundColor: "rgba(26,86,219,0.15)",
+              borderColor:     "#1a56db",
+              borderWidth:     2,
+              type:            "line",
+              yAxisID:         "y1",
+              tension:         0.3,
+              pointRadius:     4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            y: {
+              beginAtZero: true,
+              max:         100,
+              title: { display: true, text: "On-Time %" },
+              position: "left"
+            },
+            y1: {
+              beginAtZero: true,
+              title: { display: true, text: "Avg Delay (mins)" },
+              position: "right",
+              grid: { drawOnChartArea: false }
+            }
+          },
+          plugins: {
+            legend: { position: "bottom" }
+          }
+        }
+      });
+
+      // Show everything
+      document.getElementById("loadingMsg").style.display = "none";
+      document.getElementById("zoneGrid").style.display   = "grid";
+      document.getElementById("chartCard").style.display  = "block";
+
+    } catch (err) {
+      document.getElementById("loadingMsg").style.display = "none";
+      document.getElementById("errorMsg").style.display   = "block";
+      document.getElementById("errorMsg").textContent     =
+        "Could not connect to API. Make sure backend is running.";
+    }
+  }
+
+  loadZones();
+</script>
+
+</body>
+</html>
