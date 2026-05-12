@@ -20,3 +20,7 @@ Thumbs.db
 # Secrets
 config.py
 secrets.py
+
+# Logs
+scheduler.log
+*.log
