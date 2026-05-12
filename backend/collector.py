@@ -261,40 +261,202 @@ def print_parsed_records(train_no, records, raw_data):
 
 
 # ─────────────────────────────────────────
-# Test — fetch + parse one train
+# Database save
 # ─────────────────────────────────────────
 
-def test_parse():
+def save_records_to_db(records):
+    """
+    Saves a list of parsed delay records into the delay_records table.
+    Skips duplicates — same train + station + date won't be inserted twice.
+    Returns count of newly inserted records.
+    """
+    if not records:
+        return 0
+
+    # Import here to avoid circular imports
+    from database import SessionLocal
+    from models import DelayRecord
+    from datetime import time as dtime
+
+    db = SessionLocal()
+    inserted = 0
+    skipped  = 0
+
+    try:
+        for r in records:
+            # Check for duplicate — same train, station, date
+            existing = db.query(DelayRecord).filter_by(
+                train_no     = r["train_no"],
+                station_code = r["station_code"],
+                recorded_on  = r["recorded_on"]
+            ).first()
+
+            if existing:
+                skipped += 1
+                continue
+
+            # Parse scheduled_arr string to time object
+            def parse_time(t_str):
+                """Converts '11:43' string to Python time object."""
+                try:
+                    return datetime.strptime(t_str, "%H:%M").time()
+                except (ValueError, TypeError):
+                    return None
+
+            record = DelayRecord(
+                train_no      = r["train_no"],
+                station_code  = r["station_code"],
+                station_name  = r["station_name"],
+                scheduled_arr = parse_time(r["scheduled_arr"]),
+                actual_arr    = parse_time(r["actual_arr"]),
+                delay_mins    = r["delay_mins"],
+                recorded_on   = r["recorded_on"],
+                day_of_week   = r["day_of_week"],
+                month         = r["month"]
+            )
+            db.add(record)
+            inserted += 1
+
+        db.commit()
+        return inserted
+
+    except Exception as e:
+        db.rollback()
+        print(f"   ❌ DB error: {e}")
+        return 0
+
+    finally:
+        db.close()
+
+
+# ─────────────────────────────────────────
+# Full collection run — all trains
+# ─────────────────────────────────────────
+
+def run_collection():
+    """
+    Main pipeline — runs for all trains in TRAINS list.
+    Fetch → Parse → Save for each train.
+    Called by scheduler every 6 hours.
+    """
+    import time
+
+    today     = date.today()
+    total_inserted = 0
+    total_failed   = 0
+
+    print("\n" + "🔁 "*20)
+    print(f"🚀 Starting collection run — {today} ({get_day_of_week()})")
+    print(f"   Trains to process: {len(TRAINS)}")
+    print("🔁 "*20)
+
+    for i, train_no in enumerate(TRAINS, 1):
+        print(f"\n[{i}/{len(TRAINS)}] Train {train_no}")
+
+        # Fetch
+        raw_data = fetch_train_status(train_no)
+        if not raw_data:
+            print(f"   ⚠️  Skipping — no data returned")
+            total_failed += 1
+            time.sleep(2)
+            continue
+
+        # Parse
+        records = parse_delay_records(train_no, raw_data)
+        if not records:
+            print(f"   ⚠️  Skipping — no stations parsed")
+            total_failed += 1
+            time.sleep(2)
+            continue
+
+        print(f"   📊 Parsed {len(records)} station records")
+
+        # Save
+        inserted = save_records_to_db(records)
+        print(f"   💾 Saved {inserted} new records to DB")
+
+        total_inserted += inserted
+
+        # Polite delay between API calls — avoid rate limiting
+        time.sleep(3)
+
+    print("\n" + "="*50)
+    print(f"✅ Collection run complete!")
+    print(f"   Trains processed : {len(TRAINS) - total_failed}/{len(TRAINS)}")
+    print(f"   Records inserted : {total_inserted}")
+    print(f"   Trains failed    : {total_failed}")
+    print("="*50)
+
+
+# ─────────────────────────────────────────
+# Test — single train full pipeline
+# ─────────────────────────────────────────
+
+def test_full_pipeline():
+    """
+    Tests complete pipeline for one train:
+    Fetch → Parse → Save → Verify from DB
+    """
     if not API_KEY:
         print("❌ API key not found in .env")
         return
 
-    print("🚀 Day 5 — Testing fetch + parse pipeline...")
+    from database import SessionLocal
+    from models import DelayRecord
+
+    print("🚀 Day 6 — Testing full pipeline (fetch → parse → save)...")
     print(f"   API Key: {API_KEY[:6]}{'*' * (len(API_KEY)-6)}\n")
 
     train_no = "12650"
-    print(f"📡 Fetching train {train_no}...")
 
+    # Step 1 — Fetch
+    print(f"📡 Step 1: Fetching train {train_no}...")
     raw_data = fetch_train_status(train_no)
-
     if not raw_data:
-        print("❌ No data returned — train may not be running today")
+        print("❌ Fetch failed")
         return
+    print(f"   ✅ Fetched successfully")
 
-    print(f"✅ Raw data received")
-    print(f"📊 Parsing delay records...")
-
+    # Step 2 — Parse
+    print(f"\n📊 Step 2: Parsing station records...")
     records = parse_delay_records(train_no, raw_data)
+    print(f"   ✅ Parsed {len(records)} station records")
 
-    print_parsed_records(train_no, records, raw_data)
+    # Step 3 — Save
+    print(f"\n💾 Step 3: Saving to PostgreSQL...")
+    inserted = save_records_to_db(records)
+    print(f"   ✅ Inserted {inserted} new records")
 
-    print(f"\n📋 Summary:")
-    print(f"   Total stations parsed : {len(records)}")
-    print(f"   Stations with delay   : {sum(1 for r in records if r['delay_mins'] > 0)}")
-    print(f"   Stations on time      : {sum(1 for r in records if r['delay_mins'] == 0)}")
-    max_delay = max((r['delay_mins'] for r in records), default=0)
-    print(f"   Max delay seen        : {max_delay} mins")
+    # Step 4 — Verify from DB
+    print(f"\n🔍 Step 4: Verifying from database...")
+    db = SessionLocal()
+    try:
+        db_records = db.query(DelayRecord).filter_by(
+            train_no    = train_no,
+            recorded_on = date.today()
+        ).all()
+
+        print(f"   ✅ Found {len(db_records)} records in DB for today")
+        print(f"\n   Sample records from DB:")
+        print(f"   {'Code':<8} {'Station':<28} {'Delay':<8} {'Day'}")
+        print(f"   {'-'*8} {'-'*28} {'-'*8} {'-'*10}")
+
+        for rec in db_records[:5]:  # show first 5
+            print(
+                f"   {rec.station_code:<8} "
+                f"{rec.station_name:<28} "
+                f"{rec.delay_mins:<8} "
+                f"{rec.day_of_week}"
+            )
+
+        if len(db_records) > 5:
+            print(f"   ... and {len(db_records) - 5} more records")
+
+    finally:
+        db.close()
+
+    print(f"\n🎉 Full pipeline working! Data is in PostgreSQL.")
 
 
 if __name__ == "__main__":
-    test_parse()
+    test_full_pipeline()
