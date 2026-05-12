@@ -1,10 +1,11 @@
 # collector.py
-# Uses IRCTC API on RapidAPI — irctc1 by IRCTCAPI
+# Day 5 — parse station delay data from IRCTC RapidAPI
+# Produces clean list of delay records ready for DB insert (Day 6)
 
 import os
 import json
 import requests
-from datetime import date
+from datetime import date, datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,94 +18,283 @@ HEADERS = {
     "x-rapidapi-host": "irctc1.p.rapidapi.com"
 }
 
-TRAINS = ["12650", "12951", "12301"]
+# ─────────────────────────────────────────
+# 50 popular trains to track
+# ─────────────────────────────────────────
+TRAINS = [
+    "12650", "12651",  # Karnataka Sampark Kranti
+    "12951", "12952",  # Mumbai Rajdhani
+    "12301", "12302",  # Howrah Rajdhani
+    "22221", "22222",  # CSMT Rajdhani
+    "12002",           # Bhopal Shatabdi
+    "12009", "12010",  # Mumbai Shatabdi
+    "12627", "12628",  # Karnataka Express
+    "12657", "12658",  # Chennai Mail
+    "16093", "16094",  # Lucknow Express
+    "12491", "12492",  # Maur Dhawaj Express
+    "12451", "12452",  # Shram Shakti Express
+    "12589", "12590",  # Gorakhpur Express
+    "12391", "12392",  # Shramjeevi Express
+    "12553", "12554",  # Vaishali Express
+    "12559", "12560",  # Shiv Ganga Express
+    "12381", "12382",  # Poorva Express
+    "12801", "12802",  # Purushottam Express
+    "12875", "12876",  # Neelachal Express
+    "12505", "12506",  # North East Express
+    "12273", "12274",  # Duronto Express
+    "12259", "12260",  # Sealdah Duronto
+    "12019", "12020",  # Howrah Shatabdi
+    "12023", "12024",  # Pune Shatabdi
+    "12011", "12012",  # Kalka Shatabdi
+]
 
+
+# ─────────────────────────────────────────
+# Utility functions
+# ─────────────────────────────────────────
 
 def get_today():
+    """Returns today's date in YYYYMMDD format for API call."""
     return date.today().strftime("%Y%m%d")
 
 
+def clean_station_name(name):
+    """
+    Removes dirty characters from station names.
+    API sometimes returns 'BHANDAI~' or 'AGRA CANTT~'
+    """
+    return name.replace("~", "").strip()
+
+
+def parse_delay_mins(delay_value):
+    """
+    Converts delay value from API to integer minutes.
+    API returns integer directly — but we guard against None or empty.
+    """
+    try:
+        return int(delay_value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def get_day_of_week(date_obj=None):
+    """Returns day name like 'Monday', 'Tuesday' etc."""
+    if date_obj is None:
+        date_obj = date.today()
+    return date_obj.strftime("%A")
+
+
+def get_month(date_obj=None):
+    """Returns month as integer 1-12."""
+    if date_obj is None:
+        date_obj = date.today()
+    return date_obj.month
+
+
+# ─────────────────────────────────────────
+# API fetch
+# ─────────────────────────────────────────
+
 def fetch_train_status(train_no, travel_date=None):
+    """
+    Calls IRCTC RapidAPI for a single train.
+    Returns full JSON response or None on failure.
+    """
     if travel_date is None:
         travel_date = get_today()
 
     params = {
-        "trainNo":   train_no,
+        "trainNo":         train_no,
         "startingStation": "",
         "endingStation":   "",
         "departureDate":   travel_date
     }
 
-    print(f"\n📡 Fetching train {train_no} for date {travel_date}...")
-
     try:
-        response = requests.get(BASE_URL, headers=HEADERS, params=params, timeout=15)
-
-        print(f"   HTTP Status: {response.status_code}")
+        response = requests.get(
+            BASE_URL,
+            headers=HEADERS,
+            params=params,
+            timeout=15
+        )
 
         if response.status_code != 200:
-            print(f"   ❌ Error: {response.text[:200]}")
+            print(f"   ❌ HTTP {response.status_code} for train {train_no}")
             return None
 
         data = response.json()
 
         if not data.get("status"):
-            print(f"   ⚠️  API returned: {data.get('message', 'Unknown error')}")
+            print(f"   ⚠️  API error for {train_no}: {data.get('message')}")
             return None
 
-        stations = data.get("data", {}).get("upcoming_stations", [])
-        print(f"   ✅ Got data — {len(stations)} upcoming stations found")
         return data
 
+    except requests.exceptions.Timeout:
+        print(f"   ❌ Timeout for train {train_no}")
+        return None
+    except requests.exceptions.ConnectionError:
+        print(f"   ❌ Connection error for train {train_no}")
+        return None
     except Exception as e:
-        print(f"   ❌ Error: {e}")
+        print(f"   ❌ Unexpected error for train {train_no}: {e}")
         return None
 
 
-def print_raw_response(data):
-    if not data:
-        print("No data.")
-        return
+# ─────────────────────────────────────────
+# Core parser — this is the main function
+# ─────────────────────────────────────────
 
-    info = data.get("data", {})
-    print("\n" + "="*60)
-    print(f"🚆 Train : {info.get('train_name')} ({info.get('train_number')})")
-    print(f"   From  : {info.get('source_stn_name')} ({info.get('source')})")
-    print(f"   To    : {info.get('dest_stn_name')} ({info.get('destination')})")
-    print(f"   Status: {info.get('status_as_of')}")
-    print(f"   Delay : {info.get('delay')} mins")
-    print(f"   Currently at: {info.get('current_station_name')} ({info.get('current_station_code')})")
-    print(f"   Distance covered: {info.get('distance_from_source')} / {info.get('total_distance')} km")
+def parse_delay_records(train_no, raw_data):
+    """
+    Takes raw API response and returns a clean list of delay records.
+    Each record = one station's delay data for today.
 
-    stations = info.get("upcoming_stations", [])
-    print(f"\n📍 Upcoming Stations ({len(stations)} total):")
-    print(f"   {'Name':<30} {'STA':<8} {'ETA':<8} {'Delay'}")
-    print(f"   {'-'*30} {'-'*8} {'-'*8} {'-'*8}")
+    Returns list of dicts like:
+    {
+        "train_no":      "12650",
+        "station_code":  "GWL",
+        "station_name":  "GWALIOR JN",
+        "scheduled_arr": "11:43",
+        "actual_arr":    "11:43",
+        "delay_mins":    0,
+        "recorded_on":   date(2026, 5, 14),
+        "day_of_week":   "Thursday",
+        "month":         5
+    }
+    """
+    if not raw_data:
+        return []
 
-    for s in stations:
-        name  = s.get("station_name", "")[:29]
-        sta   = s.get("sta", "--")
-        eta   = s.get("eta", "--")
-        delay = s.get("arrival_delay", "-")
-        print(f"   {name:<30} {sta:<8} {eta:<8} {delay}")
+    info     = raw_data.get("data", {})
+    today    = date.today()
+    records  = []
 
-    print("\n🔍 First station raw JSON:")
-    if stations:
-        print(json.dumps(stations[0], indent=4))
-    print("="*60)
+    # Get upcoming stations list
+    upcoming = info.get("upcoming_stations", [])
+
+    # Also grab current station separately
+    current_code = info.get("current_station_code", "")
+    current_name = info.get("current_station_name", "")
+    current_delay = info.get("delay", 0)
+    cur_sta  = info.get("cur_stn_sta", "")
+    cur_eta  = info.get("eta", "")
+
+    # Add current station as a record if it has valid data
+    if current_code and current_code.strip():
+        records.append({
+            "train_no":      train_no,
+            "station_code":  current_code.strip(),
+            "station_name":  clean_station_name(current_name),
+            "scheduled_arr": cur_sta,
+            "actual_arr":    cur_eta,
+            "delay_mins":    parse_delay_mins(current_delay),
+            "recorded_on":   today,
+            "day_of_week":   get_day_of_week(today),
+            "month":         get_month(today)
+        })
+
+    # Parse each upcoming station
+    for station in upcoming:
+        code  = station.get("station_code", "").strip()
+        name  = station.get("station_name", "").strip()
+
+        # Skip blank/empty stations (first entry in API is sometimes empty)
+        if not code or not name:
+            continue
+
+        sta   = station.get("sta", "")       # scheduled arrival
+        eta   = station.get("eta", "")       # estimated actual arrival
+        delay = station.get("arrival_delay", 0)
+
+        record = {
+            "train_no":      train_no,
+            "station_code":  code,
+            "station_name":  clean_station_name(name),
+            "scheduled_arr": sta,
+            "actual_arr":    eta,
+            "delay_mins":    parse_delay_mins(delay),
+            "recorded_on":   today,
+            "day_of_week":   get_day_of_week(today),
+            "month":         get_month(today)
+        }
+        records.append(record)
+
+    return records
 
 
-def test_single_train():
+def print_parsed_records(train_no, records, raw_data):
+    """Prints parsed delay records in a clean readable format."""
+
+    info = raw_data.get("data", {})
+
+    print("\n" + "=" * 65)
+    print(f"🚆 {info.get('train_name')} ({train_no})")
+    print(f"   {info.get('source_stn_name')} → {info.get('dest_stn_name')}")
+    print(f"   Current delay : {info.get('delay')} mins")
+    print(f"   Currently at  : {clean_station_name(info.get('current_station_name', ''))}")
+    print(f"   Recorded on   : {date.today()} ({get_day_of_week()})")
+    print(f"   Total records : {len(records)} stations")
+    print("=" * 65)
+
+    print(f"\n{'#':<4} {'Code':<8} {'Station Name':<30} {'Sched':<8} {'Actual':<8} {'Delay'}")
+    print(f"{'-'*4} {'-'*8} {'-'*30} {'-'*8} {'-'*8} {'-'*6}")
+
+    for i, r in enumerate(records, 1):
+        delay_str = f"{r['delay_mins']} min" if r['delay_mins'] > 0 else "On time"
+        print(
+            f"{i:<4} "
+            f"{r['station_code']:<8} "
+            f"{r['station_name']:<30} "
+            f"{r['scheduled_arr']:<8} "
+            f"{r['actual_arr']:<8} "
+            f"{delay_str}"
+        )
+
+    print("\n✅ Sample record (what will go into DB tomorrow):")
+    if records:
+        print(json.dumps(
+            {**records[0], "recorded_on": str(records[0]["recorded_on"])},
+            indent=4
+        ))
+    print("=" * 65)
+
+
+# ─────────────────────────────────────────
+# Test — fetch + parse one train
+# ─────────────────────────────────────────
+
+def test_parse():
     if not API_KEY:
         print("❌ API key not found in .env")
         return
 
-    print("🚀 Testing IRCTC RapidAPI...")
-    print(f"   Key: {API_KEY[:6]}{'*'*(len(API_KEY)-6)}")
+    print("🚀 Day 5 — Testing fetch + parse pipeline...")
+    print(f"   API Key: {API_KEY[:6]}{'*' * (len(API_KEY)-6)}\n")
 
-    data = fetch_train_status("12650")
-    print_raw_response(data)
+    train_no = "12650"
+    print(f"📡 Fetching train {train_no}...")
+
+    raw_data = fetch_train_status(train_no)
+
+    if not raw_data:
+        print("❌ No data returned — train may not be running today")
+        return
+
+    print(f"✅ Raw data received")
+    print(f"📊 Parsing delay records...")
+
+    records = parse_delay_records(train_no, raw_data)
+
+    print_parsed_records(train_no, records, raw_data)
+
+    print(f"\n📋 Summary:")
+    print(f"   Total stations parsed : {len(records)}")
+    print(f"   Stations with delay   : {sum(1 for r in records if r['delay_mins'] > 0)}")
+    print(f"   Stations on time      : {sum(1 for r in records if r['delay_mins'] == 0)}")
+    max_delay = max((r['delay_mins'] for r in records), default=0)
+    print(f"   Max delay seen        : {max_delay} mins")
 
 
 if __name__ == "__main__":
-    test_single_train()
+    test_parse()
